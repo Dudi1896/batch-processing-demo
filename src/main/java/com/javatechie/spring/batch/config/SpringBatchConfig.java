@@ -5,7 +5,6 @@ import com.javatechie.spring.batch.repository.CustomerRepository;
 import lombok.AllArgsConstructor;
 import org.springframework.batch.core.Job;
 import org.springframework.batch.core.Step;
-import org.springframework.batch.core.configuration.annotation.EnableBatchProcessing;
 import org.springframework.batch.core.job.builder.JobBuilder;
 import org.springframework.batch.core.repository.JobRepository;
 import org.springframework.batch.core.step.builder.StepBuilder;
@@ -17,25 +16,28 @@ import org.springframework.batch.item.file.mapping.DefaultLineMapper;
 import org.springframework.batch.item.file.transform.DelimitedLineTokenizer;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.core.io.FileSystemResource;
+import org.springframework.context.annotation.PropertySource;
+import org.springframework.core.io.ClassPathResource;
 import org.springframework.core.task.SimpleAsyncTaskExecutor;
 import org.springframework.core.task.TaskExecutor;
 import org.springframework.transaction.PlatformTransactionManager;
 
 @Configuration
-@EnableBatchProcessing
 @AllArgsConstructor
+@PropertySource("classpath:application.properties")
 public class SpringBatchConfig {
-    private JobRepository jobRepository;
-    private PlatformTransactionManager transactionManager;
     private CustomerRepository customerRepository;
 
+
     /**Reads data from a flat file line by line. Converts each object into
-     * a line and returns object to the job processor **/
+     * a line and returns object to the job processor
+     * must use ClassPathResource() in order to read file
+     * itemReader.setResource(new FileSystemResource("src/main/resources/customers.csv")) will NOT work
+     * **/
     @Bean
     public FlatFileItemReader<Customer> reader() {
         FlatFileItemReader<Customer> itemReader = new FlatFileItemReader<>();
-        itemReader.setResource(new FileSystemResource("src/main/resources/customers.csv"));
+        itemReader.setResource(new ClassPathResource("customers.csv"));
         itemReader.setName("csvReader");
         itemReader.setLinesToSkip(1);
         itemReader.setLineMapper(lineMapper());
@@ -56,11 +58,13 @@ public class SpringBatchConfig {
         lineMapper.setFieldSetMapper(fieldSetMapper);
         return lineMapper;
     }
+
     /**Implements ItemProcessor for **/
     @Bean
     public CustomerProcessor processor() {
         return  new CustomerProcessor();
     }
+
     /**Implements ItemWriter**/
     @Bean
     public RepositoryItemWriter<Customer> writer(){
@@ -72,7 +76,7 @@ public class SpringBatchConfig {
 
     /**Step Interface runs ItemReader, ItemProcessor, ItemWriter*/
     @Bean
-    public Step step1(){
+    public Step step1(JobRepository jobRepository, PlatformTransactionManager transactionManager){
         return new StepBuilder("csv-step", jobRepository)
                 .<Customer, Customer>chunk(10, transactionManager)
                 .reader(reader())
@@ -82,10 +86,9 @@ public class SpringBatchConfig {
                 .build();
     }
     @Bean
-    public Job runJob(){
-        return new JobBuilder("importCustomers", jobRepository)
-                .start(step1())
-                .build();
+    public Job runJob(JobRepository jobRepository, PlatformTransactionManager transactionManager){
+        return new JobBuilder("importCustomers",jobRepository)
+                .flow(step1(jobRepository,transactionManager)).end().build();
     }
     @Bean
     public TaskExecutor taskExecutor(){
@@ -94,3 +97,5 @@ public class SpringBatchConfig {
         return asyncTaskExecutor;
     }
 }
+
+
